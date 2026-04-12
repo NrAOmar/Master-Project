@@ -1,0 +1,11 @@
+# Extra Simulink files
+slprj/
+*.slxc
+*.slx.original
+*.asv
+
+# debugging matlab files
+test.m
+
+# Other
+.DS_Store
