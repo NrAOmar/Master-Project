@@ -103,8 +103,8 @@ acc_nl = simplify(D \ (-Cvec + u))   % n x 1 symbolic q_ddot expressions
 %% Linearization
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
 % Define equilibrium point here (example upright at zero)
-q0 = sym(zeros(size(q)));    % change if needed
-q_dot0 = sym(zeros(size(q_dot)));
+q0 = [0; 0];    % change if needed
+q_dot0 = zeros(size(q_dot));
 
 % Evaluate D at equilibrium
 D0 = subs(D, q, q0);  % D evaluated at q0 (no q_dot dependence)
@@ -148,16 +148,15 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-tspan = 0:.01:0.5;
+tspan = 0:.001:10;
 % x0 = [-1; 0; pi+.1; 0]; % initial condition
-x0 = [-1; -0.1; 0; 0];
-wr = [floor.length/3; 0; 0; 0]; % reference position
+x0 = double([q0; q_dot0]) + [-1; 0.1; 0; 0];
+wr = [floor.length/3; 0; 0; 0]; % desired position
 u_controlled=@(x)-K*(x - wr); % control law
 
-addpath(genpath('./From_Literature'))
-[t,x] = ode23tb(@(t,x)pendcart(x,COM.mass,cart.mass,COM.l,g,0.5,u_controlled(x)),tspan,x0);
+[t,x] = ode23tb(@(t,x)my_pendcart(x,COM.mass,cart.mass,COM.l,g,0.5,u_controlled(x)),tspan,x0);
 
 figure
 plot(t, x);
 legend('x', '\theta', 'v', '\omega');
-ylim([-10 10]);
+% ylim([-10 10]);
