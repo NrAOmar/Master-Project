@@ -1,6 +1,12 @@
-clear all, close all, clc
+clear all, clc
 
 %% Define constants
+
+% Floor
+floor = struct;
+floor.length = 5;
+floor.width = 0.4;
+floor.height = 0.01;
 
 % Cart
 cart = struct;
@@ -45,9 +51,9 @@ COM.l_dot = 0;
 COM.l_ddot = 0;
 
 COM.x = cart.x + COM.l * sin(COM.theta);
-COM.x_dot = cart.x_dot + COM.l * cos(COM.theta) * COM.theta_dot + sin(COM.theta) * COM.l_dot;
+COM.x_dot = jacobian(COM.x, [cart.x; COM.theta]) * [cart.x_dot; COM.theta_dot];
 COM.y = cart.y + COM.l * cos(COM.theta);
-COM.y_dot = cart.y_dot - COM.l * sin(COM.theta) * COM.theta_dot + cos(COM.theta) * COM.l_dot;
+COM.y_dot = jacobian(COM.y, [COM.theta]) * [COM.theta_dot];
 
 q = [cart.x; COM.theta];
 q_dot = [cart.x_dot; COM.theta_dot];
@@ -69,8 +75,11 @@ PE = COM.mass * g * COM.y;
 
 L = KE - PE;
 
+b = 1;
+R = 1/2 * b * cart.x_dot ^ 2;
+
 % Compute the equations of motion using Lagrange's equations
-EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)';
+EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)'
 
 q_ddot_sol = struct2cell(solve(EOM == u, q_ddot));
 q_ddot_sol = simplify([q_ddot_sol{:}].')
@@ -94,7 +103,7 @@ acc_nl = simplify(D \ (-Cvec + u))   % n x 1 symbolic q_ddot expressions
 %% Linearization
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
 % Define equilibrium point here (example upright at zero)
-q0  = sym(zeros(size(q)));    % change if needed
+q0 = sym(zeros(size(q)));    % change if needed
 q_dot0 = sym(zeros(size(q_dot)));
 
 % Evaluate D at equilibrium
@@ -116,33 +125,39 @@ G_lin = G_q_jac * delta_q;      % n x 1 (first-order in q)
 % Solve for linear q_ddot: q_ddot = D0 \ ( -C_lin - G_lin + u )
 q_ddot_lin = simplify(D0 \ ( -C_lin - G_lin + u ));  % n x 1 (affine in q, q_dot, F)
 
-% Build state vector and linear state-space (for mechanical systems typical state = [q; q_dot])
-state = [q; q_dot];              % 2n x 1
-xdot_lin = [q_dot; q_ddot_lin];    % 2n x 1
-
 % Compute A,B matrices symbolically
-A_lin = simplify(jacobian(xdot_lin, state));   % 2n x 2n
-B_lin = simplify(jacobian(xdot_lin, symvar(u))); % 2n x m, more robust below
+A_lin_sym = simplify(jacobian([q_dot; q_ddot_lin], [q; q_dot]))   % 2n x 2n
+B_lin_sym = simplify(jacobian([q_dot; q_ddot_lin], symvar(u))) % 2n x m, more robust below
 
 % Evaluate A,B at equilibrium (substitute q->q0, q_dot->q_dot0)
-A_lin = simplify(subs(A_lin, [q; q_dot], [q0; q_dot0]))
-B_lin = simplify(subs(B_lin, [q; q_dot], [q0; q_dot0]))
+A_lin = simplify(subs(A_lin_sym, [q; q_dot], [q0; q_dot0]))
+B_lin = simplify(subs(B_lin_sym, [q; q_dot], [q0; q_dot0]))
+
+A_lin = double(A_lin);
+B_lin = double(B_lin);
 
 %% Design LQR controller
 % Q = diag([100, 10, 100, 10]);
 % R = diag([0.1]); 
+Q = eye(4); % 4x4 identify matrix
+R = .0001;
 
-% K = lqr(A_lin, B_lin, Q, R); % N = 0
+K = lqr(A_lin, B_lin, Q, R); % N = 0
 
-% disp('LQR Gain Matrix K:');
-% disp(K);
+disp('LQR Gain Matrix K:');
+disp(K);
 
 %% Simulate closed-loop system
-% tspan = 0:.001:10;
+tspan = 0:.01:0.5;
 % x0 = [-1; 0; pi+.1; 0]; % initial condition
-% wr = [cart.height+floor.length/3; 0; 0; 0]; % reference position
-% u=@(x)-K*(x - wr); % control law
-% [t,x] = ode45(@(t,x)pendcart(x,m,M,L,g,d,u(x)),tspan,x0);
-% 
-% plot(t, x);
-% legend('x', 'v', '\theta', '\omega');
+x0 = [-1; -0.1; 0; 0];
+wr = [floor.length/3; 0; 0; 0]; % reference position
+u_controlled=@(x)-K*(x - wr); % control law
+
+addpath(genpath('./From_Literature'))
+[t,x] = ode23tb(@(t,x)pendcart(x,COM.mass,cart.mass,COM.l,g,0.5,u_controlled(x)),tspan,x0);
+
+figure
+plot(t, x);
+legend('x', 'v', '\theta', '\omega');
+ylim([-10 10]);
