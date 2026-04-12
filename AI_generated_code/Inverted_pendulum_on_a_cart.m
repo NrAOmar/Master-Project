@@ -76,27 +76,38 @@ acc = simplify(D \ (-Cvec + Q)); % ddq = D^{-1}*( -C + Q )
 ddx_expr = simplify(acc(1));
 ddtheta_expr = simplify(acc(2));
 
-% Linearize around upright equilibrium: theta = 0, dx=0, dtheta=0
-% State vector: [x; dx; theta; dtheta] -> compute A,B linearization
-% Define state symbols
-syms x0 dx0 theta0 dtheta0 real
-% For linearization substitute symbolic variables:
-subsList = {theta, dtheta, dx, x}; % note ordering
-% Build state vector and dynamics: xdot = [dx; ddx_expr; dtheta; ddtheta_expr]
-xdot_sym = [dx; ddx_expr; dtheta; ddtheta_expr];
+% state: q = [x; theta], dq = [dx; dtheta]
+Bvec = [1; 0];
 
-% Compute Jacobians (A = df/dstate, B = df/dF)
+% equilibrium
+q0 = [0; 0]; dq0 = [0; 0];
+
+% evaluate mass matrix at equilibrium
+D0 = simplify(subs(D, theta, 0));
+
+% linearize C: keep terms linear in velocities -> C_lin = (∂C/∂dq)|0 * dq
+C_dq_jac = simplify(jacobian(Cvec, [dx; dtheta]));
+C_lin = simplify(C_dq_jac * [dx; dtheta]);    % first-order in dq
+
+% linearize G: G_lin = (∂G/∂q)|0 * (q - q0)  (q = [x;theta], only theta matters)
+G_q_jac = simplify(jacobian(Gvec, [x; theta]));
+G_lin = simplify(G_q_jac * [x; theta]);       % first-order in q
+
+% linearized implicit dynamics: D0*ddq + C_lin + G_lin = Bvec*F
+% Solve for ddq linear: ddq = D0 \ ( -C_lin - G_lin + Bvec*F )
+ddq_lin = simplify(D0 \ ( -C_lin - G_lin + Bvec*F ));
+
+% build linear state derivatives xdot = [dx; ddx_lin; dtheta; ddtheta_lin]
 state = [x; dx; theta; dtheta];
-A = simplify(jacobian(xdot_sym, state));
-B = simplify(jacobian(xdot_sym, F));
+xdot_lin = [dx; ddq_lin(1); dtheta; ddq_lin(2)];
 
-% Evaluate at equilibrium (theta=0, dtheta=0). x and dx arbitrary (don't affect linearization), set to 0.
-A_lin = simplify(subs(A, {theta, dtheta, dx, x}, {0, 0, 0, 0}));
-B_lin = simplify(subs(B, {theta, dtheta, dx, x}, {0, 0, 0, 0}));
+% compute A,B
+A_lin = simplify(jacobian(xdot_lin, state));
+B_lin = simplify(jacobian(xdot_lin, F));
 
-% Simplify A_lin and B_lin
-A_lin = simplify(A_lin);
-B_lin = simplify(B_lin);
+% evaluate at equilibrium x=0,dx=0,theta=0,dtheta=0
+A_lin = simplify(subs(A_lin, {x,dx,theta,dtheta}, {0,0,0,0}));
+B_lin = simplify(subs(B_lin, {x,dx,theta,dtheta}, {0,0,0,0}));
 
 % Outputs
 disp('Kinetic energy T:');
