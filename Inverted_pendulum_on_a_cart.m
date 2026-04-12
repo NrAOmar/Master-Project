@@ -159,5 +159,5 @@ addpath(genpath('./From_Literature'))
 
 figure
 plot(t, x);
-legend('x', 'v', '\theta', '\omega');
+legend('x', '\theta', 'v', '\omega');
 ylim([-10 10]);
