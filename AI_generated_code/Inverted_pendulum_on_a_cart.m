@@ -50,7 +50,7 @@ eq1 = simplify(EOM(1)); % equation for x
 eq2 = simplify(EOM(2)); % equation for theta
 
 % Solve for accelerations ddx and ddtheta
-sol = solve([eq1; eq2], [ddx; ddtheta], 'ReturnConditions', true);
+sol = solve(EL == Q, ddq, 'ReturnConditions', true);
 ddx_sol = simplify(sol.ddx);
 ddtheta_sol = simplify(sol.ddtheta);
 
@@ -105,16 +105,13 @@ acc = simplify(D \ (-Cvec + Q)); % ddq = D^{-1}*( -C + Q )
 ddx_expr = simplify(acc(1));
 ddtheta_expr = simplify(acc(2));
 
-% state: q = [x; theta], dq = [dx; dtheta]
-Bvec = [1; 0];
-
 % Linearized implicit dynamics: D0*ddq + C_lin + G_lin = Q_lin
-% For input linearization, linearize Q if needed (here assume Q linear in input F: Q = Bvec*F)
-% If Q depends on q or dq include jacobian terms similarly. For simplicity assume Q = Bvec*F:
+% For input linearization, linearize Q if needed (here assume Q linear in input F: Q = Q)
+% If Q depends on q or dq include jacobian terms similarly. For simplicity assume Q = Q:
 % Bvec must be n x m (m = number of inputs). Example: Bvec = [1;0] for single force.
 % Ensure Bvec is defined
-% Solve for linear ddq: ddq = D0 \ ( -C_lin - G_lin + Bvec*F )
-ddq_lin = simplify(D0 \ ( -C_lin - G_lin + Bvec*F ));  % n x 1 (affine in q, dq, F)
+% Solve for linear ddq: ddq = D0 \ ( -C_lin - G_lin + Q )
+ddq_lin = simplify(D0 \ ( -C_lin - G_lin + Q ));  % n x 1 (affine in q, dq, F)
 
 % Build state vector and linear state-space (for mechanical systems typical state = [q; dq])
 state = [q; dq];              % 2n x 1
@@ -123,10 +120,10 @@ xdot_lin = [dq; ddq_lin];    % 2n x 1
 
 % Compute A,B matrices symbolically
 A_lin = simplify(jacobian(xdot_lin, state));   % 2n x 2n
-B_lin = simplify(jacobian(xdot_lin, symvar(Bvec*F))); % 2n x m, more robust below
+B_lin = simplify(jacobian(xdot_lin, symvar(Q))); % 2n x m, more robust below
 
-% Simpler: jacobian wrt inputs (assumes inputs are named symbols appearing in Bvec*F)
-B_lin = simplify(jacobian(xdot_lin, F));       % 2n x m (F may be scalar or vector)
+% Simpler: jacobian wrt inputs (assumes inputs are named symbols appearing in Q)
+% B_lin = simplify(jacobian(xdot_lin, F));       % 2n x m (F may be scalar or vector)
 
 % Evaluate A,B at equilibrium (substitute q->q0, dq->dq0)
 A_lin = simplify(subs(A_lin, [q; dq], [q0; dq0]));
