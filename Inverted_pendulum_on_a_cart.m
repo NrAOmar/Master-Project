@@ -1,5 +1,20 @@
 clear all, clc
 
+%% Initial Conditions
+
+% Linearization point
+q0 = [0; 0];
+q_dot0 = [0; 0];
+
+% Model conditions
+tspan = 0:.001:10;
+x0 = double([q0; q_dot0]) + [-1; 0.1; 0; 0];
+wr = [1; 0; 0; 0]; % desired position
+
+% Motors restrictions
+F_max = 10; % Max Newton or Nm your motor can provide
+tau_max = 0; % Max Newton or Nm your motor can provide
+
 %% Define constants
 
 % Floor
@@ -50,7 +65,7 @@ COM.l = rod.length / 2;
 COM.l_dot = 0;
 COM.l_ddot = 0;
 
-COM.x = cart.x + COM.l * sin(COM.theta);
+COM.x = cart.x - COM.l * sin(COM.theta);
 COM.x_dot = jacobian(COM.x, [cart.x; COM.theta]) * [cart.x_dot; COM.theta_dot];
 COM.y = cart.y + COM.l * cos(COM.theta);
 COM.y_dot = jacobian(COM.y, [COM.theta]) * [COM.theta_dot];
@@ -61,6 +76,7 @@ q_ddot = [cart.x_ddot; COM.theta_ddot];
 
 syms F real
 u = [F; 0];
+u_max = [F_max; tau_max];
 
 %% Define Lagrange Equations
 
@@ -81,9 +97,6 @@ R = 1/2 * b * cart.x_dot ^ 2;
 % Compute the equations of motion using Lagrange's equations
 EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)'
 
-q_ddot_sol = struct2cell(solve(EOM == u, q_ddot));
-q_ddot_sol = simplify([q_ddot_sol{:}].')
-
 % Mass matrix D(q): coefficients of accelerations in EOM (linear in q_ddot)
 D = jacobian(EOM, q_ddot);  % n x n
 
@@ -98,13 +111,10 @@ Gvec = subs(Cg, q_dot, zeroDQ);  % n x 1
 Cvec = Cg - Gvec;  % n x 1
 
 % Solve for nonlinear accelerations (q_ddot = D^{-1}*( -C + u ))
-acc_nl = simplify(D \ (-Cvec + u))   % n x 1 symbolic q_ddot expressions
+acc_nl = simplify(D \ (-Cg + u))   % n x 1 symbolic q_ddot expressions
 
 %% Linearization
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
-% Define equilibrium point here (example upright at zero)
-q0 = [0; 0];    % change if needed
-q_dot0 = zeros(size(q_dot));
 
 % Evaluate D at equilibrium
 D0 = subs(D, q, q0);  % D evaluated at q0 (no q_dot dependence)
@@ -137,10 +147,8 @@ A_lin = double(A_lin);
 B_lin = double(B_lin);
 
 %% Design LQR controller
-% Q = diag([100, 10, 100, 10]);
-% R = diag([0.1]); 
-Q = eye(4); % 4x4 identify matrix
-R = .0001;
+Q = diag(ones(size([q; q_dot])));
+R = diag(0.0001*ones(size(symvar(u)))); 
 
 K = lqr(A_lin, B_lin, Q, R); % N = 0
 
@@ -148,15 +156,27 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-tspan = 0:.001:10;
-% x0 = [-1; 0; pi+.1; 0]; % initial condition
-x0 = double([q0; q_dot0]) + [-1; 0.1; 0; 0];
-wr = [floor.length/3; 0; 0; 0]; % desired position
-u_controlled=@(x)-K*(x - wr); % control law
+u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
 
-[t,x] = ode23tb(@(t,x)my_pendcart(x,COM.mass,cart.mass,COM.l,g,0.5,u_controlled(x)),tspan,x0);
+D_handle  = matlabFunction(D,  'vars', {q});
+Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+
+[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
 
 figure
-plot(t, x);
-legend('x', '\theta', 'v', '\omega');
-% ylim([-10 10]);
+u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+plot(t, [x, u_history']);
+legend('x', '\theta', 'v', '\omega', 'F', '\tau');
+legend
+
+function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
+    q_i  = x(1:2);
+    q_dot_i = x(3:4);
+    
+    D_val  = D_func(q_i); 
+    Cg_val = Cg_func([q_i; q_dot_i]);
+    
+    q_ddot = D_val \ (u - Cg_val);
+    
+    x_dot = [q_dot_i;  q_ddot];
+end
