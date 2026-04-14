@@ -8,8 +8,8 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = double([q0; q_dot0]) + [-1; 0.1; 0; 0];
-wr = [1; 0; 0; 0]; % desired position
+x0 = [-1; 0.1; 0; 0] + double([q0; q_dot0]);
+wr = [1; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
 F_max = 10; % Max Newton or Nm your motor can provide
@@ -29,6 +29,7 @@ cart.length = 0.05;
 cart.width = 0.05;
 cart.height = 0.05;
 cart.mass = 1;
+cart.cof = 1; % coefficient of friction
 
 % Upper Leg
 rod = struct;
@@ -91,8 +92,7 @@ PE = COM.mass * g * COM.y;
 
 L = KE - PE;
 
-b = 1;
-R = 1/2 * b * cart.x_dot ^ 2;
+R = 1/2 * cart.cof * cart.x_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
 EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)'
@@ -167,7 +167,6 @@ figure
 u_history = max(-u_max, min(u_max, -K*(x' - wr)));
 plot(t, [x, u_history']);
 legend('x', '\theta', 'v', '\omega', 'F', '\tau');
-legend
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
     q_i  = x(1:2);
