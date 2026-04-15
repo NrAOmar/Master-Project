@@ -13,10 +13,6 @@ wr = [1; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
 F_max = 1000; % Max Newton or Nm your motor can provide
-tau_max = 0; % Max Newton or Nm your motor can provide
-
-% Run simulink
-RUN_SIMULINK = true;
 
 %% Define constants
 
@@ -34,7 +30,7 @@ cart.height = 0.05;
 cart.mass = 1;
 cart.cof = 0; % coefficient of friction
 
-% Upper Leg
+% Rod
 rod = struct;
 rod.length = 0.3;
 rod.width = 0.02;
@@ -50,7 +46,7 @@ COM.mass = rod.mass;
 motion_tc = 0.02;
 g = 9.81;
 
-total_mass = rod.mass
+total_mass = cart.mass + rod.mass
 
 %% Define variables
 
@@ -58,30 +54,37 @@ total_mass = rod.mass
 cart.x = sym('cart_x', 'real');
 cart.x_dot = sym('cart_x_dot', 'real');
 cart.x_ddot = sym('cart_x_ddot', 'real');
-cart.y = cart.height;
-cart.y_dot = 0;
-cart.y_ddot = 0;
+
+cart.F = sym('cart_F', 'real');
 
 % Center of Mass
 COM.theta = sym('COM_theta', 'real');
 COM.theta_dot = sym('COM_theta_dot', 'real');
 COM.theta_ddot = sym('COM_theta_ddot', 'real');
-COM.l = rod.length / 2;
-COM.l_dot = 0;
-COM.l_ddot = 0;
 
-COM.x = cart.x - COM.l * sin(COM.theta);
-COM.x_dot = jacobian(COM.x, [cart.x; COM.theta]) * [cart.x_dot; COM.theta_dot];
-COM.y = cart.y + COM.l * cos(COM.theta);
-COM.y_dot = jacobian(COM.y, [COM.theta]) * [COM.theta_dot];
-
+% States
 q = [cart.x; COM.theta];
 q_dot = [cart.x_dot; COM.theta_dot];
 q_ddot = [cart.x_ddot; COM.theta_ddot];
 
-syms F real
-u = [F; 0];
-u_max = [F_max; tau_max];
+%% Derive other parameters
+
+% Cart
+cart.y = cart.height;
+cart.y_dot = jacobian(cart.y, q) * q_dot;
+
+% Center of Mass
+COM.l = rod.length / 2;
+COM.l_dot = jacobian(COM.l, q) * q_dot;
+
+COM.x = cart.x - COM.l * sin(COM.theta);
+COM.x_dot = jacobian(COM.x, q) * q_dot;
+COM.y = cart.y + COM.l * cos(COM.theta);
+COM.y_dot = jacobian(COM.y, q) * q_dot;
+
+% Inputs
+u = [cart.F; 0];
+u_max = [F_max; 0];
 
 %% Define Lagrange Equations
 
@@ -90,7 +93,7 @@ KE = 1/2 * cart.mass * (cart.x_dot ^ 2 + cart.y_dot ^ 2) + ...
      1/2 * COM.mass * (COM.x_dot ^ 2 + COM.y_dot ^ 2);
 
 % Compute potential energy
-PE = COM.mass * g * COM.y;
+PE = (COM.mass * COM.y + cart.mass * cart.y) * g;
 
 %% Solve Lagrange Equations
 
@@ -164,21 +167,17 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-if (RUN_SIMULINK)
-    out = sim(strcat(mfilename('fullpath'), "_model"));
-else
-    u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-    
-    D_handle  = matlabFunction(D,  'vars', {q});
-    Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-    
-    [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-    
-    figure
-    u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-    plot(t, [x, u_history']);
-    legend('x', '\theta', 'v', '\omega', 'F', '\tau');
-end
+u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+
+D_handle  = matlabFunction(D,  'vars', {q});
+Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+
+[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+
+figure
+u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+plot(t, [x, u_history']);
+legend('x', '\theta', 'v', '\omega', 'F', '\tau');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
     q_i  = x(1:2);
