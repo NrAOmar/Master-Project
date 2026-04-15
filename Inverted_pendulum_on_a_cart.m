@@ -8,12 +8,15 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [-1; -0.1; 0; 0] + double([q0; q_dot0]);
+x0 = [-1; 0.5; 0; 0] + double([q0; q_dot0]);
 wr = [1; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-F_max = 20; % Max Newton or Nm your motor can provide
+F_max = 1000; % Max Newton or Nm your motor can provide
 tau_max = 0; % Max Newton or Nm your motor can provide
+
+% Run simulink
+RUN_SIMULINK = true;
 
 %% Define constants
 
@@ -29,7 +32,7 @@ cart.length = 0.05;
 cart.width = 0.05;
 cart.height = 0.05;
 cart.mass = 1;
-cart.cof = 1; % coefficient of friction
+cart.cof = 0; % coefficient of friction
 
 % Upper Leg
 rod = struct;
@@ -37,7 +40,7 @@ rod.length = 0.3;
 rod.width = 0.02;
 rod.thickness = 0.005;
 rod.mass = 1;
-rod.cof = 0.1; % coefficient of friction
+rod.cof = 0; % coefficient of friction
 
 % Center of Mass
 COM = struct;
@@ -149,35 +152,42 @@ A_lin = double(A_lin);
 B_lin = double(B_lin);
 
 %% Design LQR controller
-Q = diag(ones(size([q; q_dot])));
-R = diag(0.0001*ones(size(symvar(u)))); 
+Q = diag(10*ones(size([q; q_dot])));
+R = diag(0.1*ones(size(symvar(u))));
+
+% Q = diag([5 10 10 0.1]);
+% R = diag([10]);
 
 K = lqr(A_lin, B_lin, Q, R); % N = 0
 
 disp('LQR Gain Matrix K:');
 disp(K);
 
-% %% Simulate closed-loop system
-% u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-% 
-% D_handle  = matlabFunction(D,  'vars', {q});
-% Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-% 
-% [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-% 
-% figure
-% u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-% plot(t, [x, u_history']);
-% legend('x', '\theta', 'v', '\omega', 'F', '\tau');
-% 
-% function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
-%     q_i  = x(1:2);
-%     q_dot_i = x(3:4);
-% 
-%     D_val  = D_func(q_i); 
-%     Cg_val = Cg_func([q_i; q_dot_i]);
-% 
-%     q_ddot = D_val \ (u - Cg_val);
-% 
-%     x_dot = [q_dot_i;  q_ddot];
-% end
+%% Simulate closed-loop system
+if (RUN_SIMULINK)
+    out = sim(strcat(mfilename('fullpath'), "_model"));
+else
+    u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+    
+    D_handle  = matlabFunction(D,  'vars', {q});
+    Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+    
+    [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+    
+    figure
+    u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+    plot(t, [x, u_history']);
+    legend('x', '\theta', 'v', '\omega', 'F', '\tau');
+end
+
+function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
+    q_i  = x(1:2);
+    q_dot_i = x(3:4);
+
+    D_val  = D_func(q_i); 
+    Cg_val = Cg_func([q_i; q_dot_i]);
+
+    q_ddot = D_val \ (u - Cg_val);
+
+    x_dot = [q_dot_i;  q_ddot];
+end
