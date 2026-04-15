@@ -8,11 +8,11 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [-1; 0.1; 0; 0] + double([q0; q_dot0]);
+x0 = [-1; -0.1; 0; 0] + double([q0; q_dot0]);
 wr = [1; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-F_max = 10; % Max Newton or Nm your motor can provide
+F_max = 20; % Max Newton or Nm your motor can provide
 tau_max = 0; % Max Newton or Nm your motor can provide
 
 %% Define constants
@@ -37,6 +37,7 @@ rod.length = 0.3;
 rod.width = 0.02;
 rod.thickness = 0.005;
 rod.mass = 1;
+rod.cof = 0.1; % coefficient of friction
 
 % Center of Mass
 COM = struct;
@@ -93,6 +94,7 @@ PE = COM.mass * g * COM.y;
 L = KE - PE;
 
 R = 1/2 * cart.cof * cart.x_dot ^ 2;
+R = R + 1/2 * rod.cof * COM.theta_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
 EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)'
@@ -155,27 +157,27 @@ K = lqr(A_lin, B_lin, Q, R); % N = 0
 disp('LQR Gain Matrix K:');
 disp(K);
 
-%% Simulate closed-loop system
-u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-
-D_handle  = matlabFunction(D,  'vars', {q});
-Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-
-[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-
-figure
-u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-plot(t, [x, u_history']);
-legend('x', '\theta', 'v', '\omega', 'F', '\tau');
-
-function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
-    q_i  = x(1:2);
-    q_dot_i = x(3:4);
-    
-    D_val  = D_func(q_i); 
-    Cg_val = Cg_func([q_i; q_dot_i]);
-    
-    q_ddot = D_val \ (u - Cg_val);
-    
-    x_dot = [q_dot_i;  q_ddot];
-end
+% %% Simulate closed-loop system
+% u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+% 
+% D_handle  = matlabFunction(D,  'vars', {q});
+% Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+% 
+% [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+% 
+% figure
+% u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+% plot(t, [x, u_history']);
+% legend('x', '\theta', 'v', '\omega', 'F', '\tau');
+% 
+% function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
+%     q_i  = x(1:2);
+%     q_dot_i = x(3:4);
+% 
+%     D_val  = D_func(q_i); 
+%     Cg_val = Cg_func([q_i; q_dot_i]);
+% 
+%     q_ddot = D_val \ (u - Cg_val);
+% 
+%     x_dot = [q_dot_i;  q_ddot];
+% end
