@@ -8,15 +8,14 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [-1; 0.5; 0; 0] + double([q0; q_dot0]);
-wr = [1; 0; 0; 0] + double([q0; q_dot0]); % desired position
+x0 = [0; -0.1; 0; 0] + double([q0; q_dot0]);
+wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-F_max = 1000; % Max Newton or Nm your motor can provide
-tau_max = 0; % Max Newton or Nm your motor can provide
+tau_max = 20; % Max Newton or Nm your motor can provide
 
 % Run simulink
-RUN_SIMULINK = true;
+RUN_SIMULINK = false;
 
 %% Define constants
 
@@ -26,15 +25,15 @@ floor.length = 5;
 floor.width = 0.4;
 floor.height = 0.01;
 
-% Cart
-cart = struct;
-cart.length = 0.05;
-cart.width = 0.05;
-cart.height = 0.05;
-cart.mass = 1;
-cart.cof = 0; % coefficient of friction
+% Wheel
+wheel = struct;
+wheel.radius = 0.2 / 2;
+wheel.thickness = 0.01;
+wheel.mass = 1;
+wheel.I = wheel.mass * wheel.radius ^ 2;
+wheel.cof = 0; % coefficient of friction
 
-% Upper Leg
+% Rod
 rod = struct;
 rod.length = 0.3;
 rod.width = 0.02;
@@ -50,53 +49,60 @@ COM.mass = rod.mass;
 motion_tc = 0.02;
 g = 9.81;
 
-total_mass = rod.mass
+total_mass = wheel.mass + rod.mass
 
 %% Define variables
 
-% Cart
-cart.x = sym('cart_x', 'real');
-cart.x_dot = sym('cart_x_dot', 'real');
-cart.x_ddot = sym('cart_x_ddot', 'real');
-cart.y = cart.height;
-cart.y_dot = 0;
-cart.y_ddot = 0;
+% Wheel
+wheel.theta = sym('wheel_theta', 'real');
+wheel.theta_dot = sym('wheel_theta_dot', 'real');
+wheel.theta_ddot = sym('wheel_theta_ddot', 'real');
+wheel.tau = sym('wheel_tau', 'real');
 
 % Center of Mass
 COM.theta = sym('COM_theta', 'real');
 COM.theta_dot = sym('COM_theta_dot', 'real');
 COM.theta_ddot = sym('COM_theta_ddot', 'real');
+
+q = [wheel.theta; COM.theta];
+q_dot = [wheel.theta_dot; COM.theta_dot];
+q_ddot = [wheel.theta_ddot; COM.theta_ddot];
+
+%% Derive other parameters
+
+wheel.x = wheel.radius * wheel.theta;
+wheel.x_dot = jacobian(wheel.x, q) * q_dot;
+wheel.y = wheel.radius;
+wheel.y_dot = jacobian(wheel.y, q) * q_dot;
+
+% Center of Mass
 COM.l = rod.length / 2;
 COM.l_dot = 0;
 COM.l_ddot = 0;
 
-COM.x = cart.x - COM.l * sin(COM.theta);
-COM.x_dot = jacobian(COM.x, [cart.x; COM.theta]) * [cart.x_dot; COM.theta_dot];
-COM.y = cart.y + COM.l * cos(COM.theta);
-COM.y_dot = jacobian(COM.y, [COM.theta]) * [COM.theta_dot];
+COM.x = wheel.x - COM.l * sin(COM.theta);
+COM.x_dot = jacobian(COM.x, q) * q_dot;
+COM.y = wheel.y + COM.l * cos(COM.theta);
+COM.y_dot = jacobian(COM.y, q) * q_dot;
 
-q = [cart.x; COM.theta];
-q_dot = [cart.x_dot; COM.theta_dot];
-q_ddot = [cart.x_ddot; COM.theta_ddot];
-
-syms F real
-u = [F; 0];
-u_max = [F_max; tau_max];
+u = [wheel.tau; 0];
+u_max = [tau_max; 0];
 
 %% Define Lagrange Equations
 
 % Compute kinetic energy
-KE = 1/2 * cart.mass * (cart.x_dot ^ 2 + cart.y_dot ^ 2) + ...
+KE = 1/2 * wheel.mass * (wheel.x_dot ^ 2 + wheel.y_dot ^ 2) + ...
+     1/2 * wheel.I * wheel.theta_dot ^ 2 + ...
      1/2 * COM.mass * (COM.x_dot ^ 2 + COM.y_dot ^ 2);
 
 % Compute potential energy
-PE = COM.mass * g * COM.y;
+PE = (COM.mass * COM.y + wheel.mass * wheel.y) * g;
 
 %% Solve Lagrange Equations
 
 L = KE - PE;
 
-R = 1/2 * cart.cof * cart.x_dot ^ 2;
+R =     1/2 * wheel.cof * wheel.theta_dot ^ 2;
 R = R + 1/2 * rod.cof * COM.theta_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
@@ -177,7 +183,7 @@ else
     figure
     u_history = max(-u_max, min(u_max, -K*(x' - wr)));
     plot(t, [x, u_history']);
-    legend('x', '\theta', 'v', '\omega', 'F', '\tau');
+    legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 end
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
