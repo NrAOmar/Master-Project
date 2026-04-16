@@ -183,8 +183,8 @@ plot(t, [x, u_history']);
 legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
-    q_i  = x(1:2);
-    q_dot_i = x(3:4);
+    q_i  = x(1:numel(x)/2);
+    q_dot_i = x(numel(x)/2+1:end);
 
     D_val  = D_func(q_i); 
     Cg_val = Cg_func([q_i; q_dot_i]);
