@@ -26,7 +26,7 @@ floor.height = 0.01;
 wheel = struct;
 wheel.radius = 0.2 / 2;
 wheel.thickness = 0.01;
-wheel.mass = 1;
+wheel.mass = 0.2;
 wheel.I = wheel.mass * wheel.radius ^ 2;
 wheel.cof = 0; % coefficient of friction
 
