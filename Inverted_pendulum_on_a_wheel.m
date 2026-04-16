@@ -26,8 +26,8 @@ floor.height = 0.01;
 wheel = struct;
 wheel.radius = 0.2 / 2;
 wheel.thickness = 0.01;
-wheel.mass = 0.2;
-wheel.I = wheel.mass * wheel.radius ^ 2;
+wheel.mass = 1;
+wheel.I = 1/2 * wheel.mass * (wheel.radius ^ 2 + (wheel.radius - wheel.thickness ^ 2));
 wheel.cof = 0; % coefficient of friction
 
 % Rod
@@ -35,7 +35,7 @@ rod = struct;
 rod.length = 0.3;
 rod.width = 0.02;
 rod.thickness = 0.005;
-rod.mass = 1;
+rod.mass = 0.5;
 rod.cof = 0; % coefficient of friction
 
 % Center of Mass
@@ -170,17 +170,17 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-
-D_handle  = matlabFunction(D,  'vars', {q});
-Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-
-[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-
-figure
-u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-plot(t, [x, u_history']);
-legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
+% u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+% 
+% D_handle  = matlabFunction(D,  'vars', {q});
+% Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+% 
+% [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+% 
+% figure
+% u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+% plot(t, [x, u_history']);
+% legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
     q_i  = x(1:numel(x)/2);
