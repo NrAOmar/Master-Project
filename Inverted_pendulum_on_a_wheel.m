@@ -8,11 +8,11 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [0; -0.1; 0; 0] + double([q0; q_dot0]);
-wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
+x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
+wr = [2*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-tau_max = 20; % Max Newton or Nm your motor can provide
+tau_max = 1000; % Max Newton or Nm your motor can provide
 
 %% Define constants
 
@@ -25,9 +25,9 @@ floor.height = 0.01;
 % Wheel
 wheel = struct;
 wheel.radius = 0.2 / 2;
-wheel.thickness = 0.01;
-wheel.mass = 1;
-wheel.I = 1/2 * wheel.mass * (wheel.radius ^ 2 + (wheel.radius - wheel.thickness ^ 2));
+wheel.thickness = 0.1 * wheel.radius;
+wheel.mass = 0.5;
+wheel.I = 1/2 * wheel.mass * (wheel.radius ^ 2 + (wheel.radius - wheel.thickness)^ 2);
 wheel.cof = 0; % coefficient of friction
 
 % Rod
