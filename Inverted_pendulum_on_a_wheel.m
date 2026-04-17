@@ -8,7 +8,7 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
+x0 = [0; -0.5; 0; 0] + double([q0; q_dot0]);
 wr = [2*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
@@ -161,8 +161,8 @@ B_lin = double(B_lin);
 Q = diag(10*ones(size([q; q_dot])));
 R = diag(0.1*ones(size(symvar(u))));
 
-% Q = diag([5 10 10 0.1]);
-% R = diag([10]);
+% Q = diag([1 100 100 100]);
+% R = diag([1]);
 
 K = lqr(A_lin, B_lin, Q, R); % N = 0
 
@@ -170,17 +170,17 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-% u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-% 
-% D_handle  = matlabFunction(D,  'vars', {q});
-% Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-% 
-% [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-% 
-% figure
-% u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-% plot(t, [x, u_history']);
-% legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
+u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+
+D_handle  = matlabFunction(D,  'vars', {q});
+Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+
+[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+
+figure
+u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+plot(t, [x, u_history']);
+legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
     q_i  = x(1:numel(x)/2);
