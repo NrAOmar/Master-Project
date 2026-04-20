@@ -8,11 +8,11 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [-1; 0.5; 0; 0] + double([q0; q_dot0]);
-wr = [1; 0; 0; 0] + double([q0; q_dot0]); % desired position
+x0 = [0; -0.5; 0; 0] + double([q0; q_dot0]);
+wr = [2*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-F_max = 1000; % Max Newton or Nm your motor can provide
+tau_max = 1000; % Max Newton or Nm your motor can provide
 
 %% Define constants
 
@@ -22,20 +22,20 @@ floor.length = 5;
 floor.width = 0.4;
 floor.height = 0.01;
 
-% Cart
-cart = struct;
-cart.length = 0.05;
-cart.width = 0.05;
-cart.height = 0.05;
-cart.mass = 1;
-cart.cof = 0; % coefficient of friction
+% Wheel
+wheel = struct;
+wheel.radius = 0.2 / 2;
+wheel.thickness = 0.1 * wheel.radius;
+wheel.mass = 0.5;
+wheel.I = 1/2 * wheel.mass * (wheel.radius ^ 2 + (wheel.radius - wheel.thickness)^ 2);
+wheel.cof = 0; % coefficient of friction
 
 % Rod
 rod = struct;
 rod.length = 0.3;
 rod.width = 0.02;
 rod.thickness = 0.005;
-rod.mass = 1;
+rod.mass = 0.5;
 rod.cof = 0; % coefficient of friction
 
 % Center of Mass
@@ -46,16 +46,16 @@ COM.mass = rod.mass;
 motion_tc = 0.02;
 g = 9.81;
 
-total_mass = cart.mass + rod.mass
+total_mass = wheel.mass + rod.mass
 
 %% Define variables
 
-% Cart
-cart.x = sym('cart_x', 'real');
-cart.x_dot = sym('cart_x_dot', 'real');
-cart.x_ddot = sym('cart_x_ddot', 'real');
+% Wheel
+wheel.theta = sym('wheel_theta', 'real');
+wheel.theta_dot = sym('wheel_theta_dot', 'real');
+wheel.theta_ddot = sym('wheel_theta_ddot', 'real');
 
-cart.F = sym('cart_F', 'real');
+wheel.tau = sym('wheel_tau', 'real');
 
 % Center of Mass
 COM.theta = sym('COM_theta', 'real');
@@ -63,43 +63,46 @@ COM.theta_dot = sym('COM_theta_dot', 'real');
 COM.theta_ddot = sym('COM_theta_ddot', 'real');
 
 % States
-q = [cart.x; COM.theta];
-q_dot = [cart.x_dot; COM.theta_dot];
-q_ddot = [cart.x_ddot; COM.theta_ddot];
+q = [wheel.theta; COM.theta];
+q_dot = [wheel.theta_dot; COM.theta_dot];
+q_ddot = [wheel.theta_ddot; COM.theta_ddot];
 
 %% Derive other parameters
 
-% Cart
-cart.y = cart.height;
-cart.y_dot = jacobian(cart.y, q) * q_dot;
+% Wheel
+wheel.x = wheel.radius * wheel.theta;
+wheel.x_dot = jacobian(wheel.x, q) * q_dot;
+wheel.y = wheel.radius;
+wheel.y_dot = jacobian(wheel.y, q) * q_dot;
 
 % Center of Mass
 COM.l = rod.length / 2;
 COM.l_dot = jacobian(COM.l, q) * q_dot;
 
-COM.x = cart.x - COM.l * sin(COM.theta);
+COM.x = wheel.x - COM.l * sin(COM.theta);
 COM.x_dot = jacobian(COM.x, q) * q_dot;
-COM.y = cart.y + COM.l * cos(COM.theta);
+COM.y = wheel.y + COM.l * cos(COM.theta);
 COM.y_dot = jacobian(COM.y, q) * q_dot;
 
 % Inputs
-u = [cart.F; 0];
-u_max = [F_max; 0];
+u = [wheel.tau; 0];
+u_max = [tau_max; 0];
 
 %% Define Lagrange Equations
 
 % Compute kinetic energy
-KE = 1/2 * cart.mass * (cart.x_dot ^ 2 + cart.y_dot ^ 2) + ...
+KE = 1/2 * wheel.mass * (wheel.x_dot ^ 2 + wheel.y_dot ^ 2) + ...
+     1/2 * wheel.I * wheel.theta_dot ^ 2 + ...
      1/2 * COM.mass * (COM.x_dot ^ 2 + COM.y_dot ^ 2);
 
 % Compute potential energy
-PE = (COM.mass * COM.y + cart.mass * cart.y) * g;
+PE = (COM.mass * COM.y + wheel.mass * wheel.y) * g;
 
 %% Solve Lagrange Equations
 
 L = KE - PE;
 
-R = 1/2 * cart.cof * cart.x_dot ^ 2;
+R =     1/2 * wheel.cof * wheel.theta_dot ^ 2;
 R = R + 1/2 * rod.cof * COM.theta_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
@@ -158,8 +161,8 @@ B_lin = double(B_lin);
 Q = diag(10*ones(size([q; q_dot])));
 R = diag(0.1*ones(size(symvar(u))));
 
-% Q = diag([5 10 10 0.1]);
-% R = diag([10]);
+% Q = diag([1 100 100 100]);
+% R = diag([1]);
 
 K = lqr(A_lin, B_lin, Q, R); % N = 0
 
@@ -177,11 +180,11 @@ Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
 figure
 u_history = max(-u_max, min(u_max, -K*(x' - wr)));
 plot(t, [x, u_history']);
-legend('x', '\theta', 'v', '\omega', 'F', '\tau');
+legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
-    q_i  = x(1:2);
-    q_dot_i = x(3:4);
+    q_i  = x(1:numel(x)/2);
+    q_dot_i = x(numel(x)/2+1:end);
 
     D_val  = D_func(q_i); 
     Cg_val = Cg_func([q_i; q_dot_i]);
