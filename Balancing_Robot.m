@@ -15,7 +15,6 @@ wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 tau_max = 1000; % Max Newton or Nm your motor can provide
 
 required_height = 0.8;
-required_total_mass = 15;
 
 %% Define constants
 
@@ -38,20 +37,22 @@ rod = struct;
 rod.length = (required_height - wheel.radius) / 2;
 rod.width = 0.02;
 rod.thickness = 0.005;
-rod.mass = 0.5;
+rod.mass = 3;
 rod.cof = 0; % coefficient of friction
 
-total_mass = 2 * wheel.mass + 4 * rod.mass;
+% Payload
+payload = struct;
+payload.mass = 10;
 
 % Center of Mass
 COM = struct;
-COM.mass = required_total_mass - total_mass
+COM.mass = 4 * rod.mass + payload.mass;
 
 % Other parameters
 motion_tc = 0.02;
-g = 9.81;
+g = 9.80665;
 
-total_mass = total_mass + COM.mass;
+total_mass = 2 * wheel.mass + COM.mass;
 
 %% Define variables
 
@@ -82,28 +83,41 @@ wheel.y_dot = jacobian(wheel.y, q) * q_dot;
 
 % Lower Leg
 lowerLeg = rod;
-lowerLeg.theta = pi/4;
+lowerLeg.theta = pi/6;
+lowerLeg.theta_dot = jacobian(lowerLeg.theta, q) * q_dot;
+lowerLeg.x = wheel.x + lowerLeg.length / 2 * cos(pi/2 + lowerLeg.theta + COM.theta);
+lowerLeg.x_dot = jacobian(lowerLeg.x, q) * q_dot;
+lowerLeg.y = wheel.y + lowerLeg.length / 2 * sin(pi/2 + lowerLeg.theta + COM.theta);
+lowerLeg.y_dot = jacobian(lowerLeg.y, q) * q_dot;
 
 % Upper Leg
 upperLeg = rod;
-upperLeg.theta = pi/2;
+upperLeg.theta = -lowerLeg.theta;
+upperLeg.theta_dot = jacobian(upperLeg.theta, q) * q_dot;
+upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + lowerLeg.theta + COM.theta) + upperLeg.length / 2 * cos(pi/2 + upperLeg.theta + COM.theta);
+upperLeg.x_dot = jacobian(upperLeg.x, q) * q_dot;
+upperLeg.y = lowerLeg.y + lowerLeg.length / 2 * sin(pi/2 + lowerLeg.theta + COM.theta) + upperLeg.length / 2 * sin(pi/2 + upperLeg.theta + COM.theta);
+upperLeg.y_dot = jacobian(upperLeg.y, q) * q_dot;
 
-% Center of Mass
-% COM.l = sym('COM_l', 'real');
-% COM.l_dot = sym('COM_l_dot', 'real');
+% Payload
+payload.l = lowerLeg.length * sin(pi/2 + lowerLeg.theta) + upperLeg.length * sin(pi/2 + upperLeg.theta);
+payload.l_dot = jacobian(payload.l, q) * q_dot;
+payload.x = upperLeg.x + upperLeg.length / 2 * cos(pi/2 + upperLeg.theta + COM.theta);
+payload.x_dot = jacobian(payload.x, q) * q_dot;
+payload.y = upperLeg.y + upperLeg.length / 2 * sin(pi/2 + upperLeg.theta + COM.theta);
+payload.y_dot = jacobian(payload.y, q) * q_dot;
 
-% COM.l = lowerLeg.length * cos(pi/2 + lowerLeg.theta) + ...
-%         upperLeg.length * cos(pi/2 + lowerLeg.theta + upperLeg.theta) + ...
-%         lowerLeg.length * sin(pi/2 + lowerLeg.theta) + ...
-%         upperLeg.length * sin(pi/2 + lowerLeg.theta + upperLeg.theta);
-            
-COM.l = rod.length * sqrt(2);
-COM.l_dot = jacobian(COM.l, q) * q_dot;
-
-COM.x = wheel.x + COM.l * cos(pi/2 + COM.theta);
+% Center of mass
+COM.x = (2 * lowerLeg.x * lowerLeg.mass + 2 * upperLeg.x * upperLeg.mass + payload.x * payload.mass) / COM.mass;
 COM.x_dot = jacobian(COM.x, q) * q_dot;
-COM.y = wheel.y + COM.l * sin(pi/2 + COM.theta);
+COM.y = (2 * lowerLeg.y * lowerLeg.mass + 2 * upperLeg.y * upperLeg.mass + payload.y * payload.mass) / COM.mass;
 COM.y_dot = jacobian(COM.y, q) * q_dot;
+
+% Balance at center of mass angle instead of payload angle
+COM.theta0 = double(subs(atan2(-(COM.x-wheel.x), (COM.y-wheel.y)), 'COM_theta', q0(2)));
+q0(2) = q0(2) - COM.theta0;
+x0 = x0 + double([q0; q_dot0]);
+wr = wr + double([q0; q_dot0]);
 
 % Inputs
 u = [wheel.tau; 0];
@@ -112,12 +126,12 @@ u_max = [tau_max; 0];
 %% Define Lagrange Equations
 
 % Compute kinetic energy
-KE = 2 * (1/2 * wheel.mass * (wheel.x_dot ^ 2 + wheel.y_dot ^ 2) + ...
-          1/2 * wheel.I * wheel.theta_dot ^ 2) + ...
-     1/2 * COM.mass * (COM.x_dot ^ 2 + COM.y_dot ^ 2);
+KE = 2 * (1/2 * wheel.mass * (wheel.x_dot ^ 2 + wheel.y_dot ^ 2)) + ...
+     2 * (1/2 * wheel.I * wheel.theta_dot ^ 2) + ...
+          1/2 * COM.mass * (COM.x_dot ^ 2 + COM.y_dot ^ 2);
 
 % Compute potential energy
-PE = (COM.mass * COM.y + wheel.mass * wheel.y) * g;
+PE = (COM.mass * COM.y + 2 * wheel.mass * wheel.y) * g;
 
 %% Solve Lagrange Equations
 
@@ -191,17 +205,17 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-% u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-% 
-% D_handle  = matlabFunction(D,  'vars', {q});
-% Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-% 
-% [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-% 
-% figure
-% u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-% plot(t, [x, u_history']);
-% legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
+u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+
+D_handle  = matlabFunction(D,  'vars', {q});
+Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+
+[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+
+figure
+u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+plot(t, [x]);
+legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
     q_i  = x(1:numel(x)/2);
