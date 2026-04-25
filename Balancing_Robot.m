@@ -8,8 +8,8 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:10;
-x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
-wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
+x0 = [0; -0.1; 0; 0] + double([q0; q_dot0]);
+wr = [0; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
 tau_max = 1000; % Max Newton or Nm your motor can provide
@@ -117,7 +117,6 @@ COM.y_dot = jacobian(COM.y, q) * q_dot;
 COM.theta0 = double(subs(atan2(-(COM.x-wheel.x), (COM.y-wheel.y)), 'COM_theta', q0(2)));
 q0(2) = q0(2) - COM.theta0;
 x0 = x0 + double([q0; q_dot0]);
-wr = wr + double([q0; q_dot0]);
 
 % Inputs
 u = [wheel.tau; 0];
@@ -205,17 +204,17 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 %% Simulate closed-loop system
-u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
-
-D_handle  = matlabFunction(D,  'vars', {q});
-Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
-
-[t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
-
-figure
-u_history = max(-u_max, min(u_max, -K*(x' - wr)));
-plot(t, [x]);
-legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
+% u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
+% 
+% D_handle  = matlabFunction(D,  'vars', {q});
+% Cg_handle = matlabFunction(Cg, 'vars', {[q; q_dot]});
+% 
+% [t,x] = ode23tb(@(t, x) my_non_linear_model(t, x, u_law(x), D_handle, Cg_handle), tspan, x0);
+% 
+% figure
+% u_history = max(-u_max, min(u_max, -K*(x' - wr)));
+% plot(t, [x]);
+% legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
 
 function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
     q_i  = x(1:numel(x)/2);
