@@ -2,17 +2,18 @@ clear all, clc
 
 %% Initial Conditions
 
+tic
 % Linearization point
 q0 = [0; 0];
 q_dot0 = [0; 0];
 
 % Model conditions
-tspan = 0:.001:10;
-x0 = [0; -0.1; 0; 0] + double([q0; q_dot0]);
-wr = [0; 0; 0; 0] + double([q0; q_dot0]); % desired position
+tspan = 0:.001:30;
+x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
+wr = [pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-tau_max = 1000; % Max Newton or Nm your motor can provide
+tau_max = 20; % Max Newton or Nm your motor can provide
 
 required_height = 0.8;
 
@@ -83,28 +84,27 @@ wheel.y_dot = jacobian(wheel.y, q) * q_dot;
 
 % Lower Leg
 lowerLeg = rod;
-lowerLeg.theta = pi/6;
-lowerLeg.theta_dot = jacobian(lowerLeg.theta, q) * q_dot;
-lowerLeg.x = wheel.x + lowerLeg.length / 2 * cos(pi/2 + lowerLeg.theta + COM.theta);
+lowerLeg.length = (required_height - wheel.radius) * 0.3;
+lowerLeg.x = wheel.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta);
 lowerLeg.x_dot = jacobian(lowerLeg.x, q) * q_dot;
-lowerLeg.y = wheel.y + lowerLeg.length / 2 * sin(pi/2 + lowerLeg.theta + COM.theta);
+lowerLeg.y = wheel.y + lowerLeg.length / 2 * sin(pi/2 + COM.theta);
 lowerLeg.y_dot = jacobian(lowerLeg.y, q) * q_dot;
 
 % Upper Leg
 upperLeg = rod;
-upperLeg.theta = -lowerLeg.theta;
-upperLeg.theta_dot = jacobian(upperLeg.theta, q) * q_dot;
-upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + lowerLeg.theta + COM.theta) + upperLeg.length / 2 * cos(pi/2 + upperLeg.theta + COM.theta);
+upperLeg.length = (required_height - wheel.radius) * 0.7;
+upperLeg.theta = sym('upperLeg_theta', 'real');
+upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta) + upperLeg.length / 2 * cos(upperLeg.theta + COM.theta);
 upperLeg.x_dot = jacobian(upperLeg.x, q) * q_dot;
-upperLeg.y = lowerLeg.y + lowerLeg.length / 2 * sin(pi/2 + lowerLeg.theta + COM.theta) + upperLeg.length / 2 * sin(pi/2 + upperLeg.theta + COM.theta);
+upperLeg.y = lowerLeg.y + lowerLeg.length / 2 * sin(pi/2 + COM.theta) + upperLeg.length / 2 * sin(upperLeg.theta + COM.theta);
 upperLeg.y_dot = jacobian(upperLeg.y, q) * q_dot;
 
 % Payload
-payload.l = lowerLeg.length * sin(pi/2 + lowerLeg.theta) + upperLeg.length * sin(pi/2 + upperLeg.theta);
-payload.l_dot = jacobian(payload.l, q) * q_dot;
-payload.x = upperLeg.x + upperLeg.length / 2 * cos(pi/2 + upperLeg.theta + COM.theta);
+% payload.l = lowerLeg.length * sin(pi/2) + upperLeg.length * sin(upperLeg.theta);
+% payload.l_dot = jacobian(payload.l, q) * q_dot;
+payload.x = upperLeg.x + upperLeg.length / 2 * cos(upperLeg.theta + COM.theta);
 payload.x_dot = jacobian(payload.x, q) * q_dot;
-payload.y = upperLeg.y + upperLeg.length / 2 * sin(pi/2 + upperLeg.theta + COM.theta);
+payload.y = upperLeg.y + upperLeg.length / 2 * sin(upperLeg.theta + COM.theta);
 payload.y_dot = jacobian(payload.y, q) * q_dot;
 
 % Center of mass
@@ -112,11 +112,6 @@ COM.x = (2 * lowerLeg.x * lowerLeg.mass + 2 * upperLeg.x * upperLeg.mass + paylo
 COM.x_dot = jacobian(COM.x, q) * q_dot;
 COM.y = (2 * lowerLeg.y * lowerLeg.mass + 2 * upperLeg.y * upperLeg.mass + payload.y * payload.mass) / COM.mass;
 COM.y_dot = jacobian(COM.y, q) * q_dot;
-
-% Balance at center of mass angle instead of payload angle
-COM.theta0 = double(subs(atan2(-(COM.x-wheel.x), (COM.y-wheel.y)), 'COM_theta', q0(2)));
-q0(2) = q0(2) - COM.theta0;
-x0 = x0 + double([q0; q_dot0]);
 
 % Inputs
 u = [wheel.tau; 0];
@@ -140,7 +135,7 @@ R =     1/2 * wheel.cof * wheel.theta_dot ^ 2;
 R = R + 1/2 * rod.cof * COM.theta_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
-EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)'
+EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)';
 
 % Mass matrix D(q): coefficients of accelerations in EOM (linear in q_ddot)
 D = jacobian(EOM, q_ddot);  % n x n
@@ -156,10 +151,23 @@ Gvec = subs(Cg, q_dot, zeroDQ);  % n x 1
 Cvec = Cg - Gvec;  % n x 1
 
 % Solve for nonlinear accelerations (q_ddot = D^{-1}*( -C + u ))
-acc_nl = simplify(D \ (-Cg + u))   % n x 1 symbolic q_ddot expressions
+acc_nl = simplify(D \ (-Cg + u));   % n x 1 symbolic q_ddot expressions
+
+toc
+tic
 
 %% Linearization
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
+% Balance at center of mass angle instead of payload angle
+
+COM.theta0 = atan2(-(COM.x-wheel.x), (COM.y-wheel.y));
+matlabFunctionBlock( ...
+    "Balancing_Robot_model/Sensor/calculate_COM_theta", ...
+    COM.theta0, ...
+    'Vars',[COM.theta, upperLeg.theta]);
+
+q0(2) = q0(2) - double(subs(COM.theta0, {'COM_theta', 'upperLeg_theta'}, {q0(2), 0}));
+x0 = x0 + double([q0; q_dot0]);
 
 % Evaluate D at equilibrium
 D0 = subs(D, q, q0);  % D evaluated at q0 (no q_dot dependence)
@@ -181,15 +189,18 @@ G_lin = G_q_jac * delta_q;      % n x 1 (first-order in q)
 q_ddot_lin = simplify(D0 \ ( -C_lin - G_lin + u ));  % n x 1 (affine in q, q_dot, F)
 
 % Compute A,B matrices symbolically
-A_lin_sym = simplify(jacobian([q_dot; q_ddot_lin], [q; q_dot]))   % 2n x 2n
-B_lin_sym = simplify(jacobian([q_dot; q_ddot_lin], symvar(u))) % 2n x m, more robust below
+A_lin_sym = simplify(jacobian([q_dot; q_ddot_lin], [q; q_dot]));   % 2n x 2n
+B_lin_sym = simplify(jacobian([q_dot; q_ddot_lin], symvar(u))); % 2n x m, more robust below
 
 % Evaluate A,B at equilibrium (substitute q->q0, q_dot->q_dot0)
-A_lin = simplify(subs(A_lin_sym, [q; q_dot], [q0; q_dot0]))
-B_lin = simplify(subs(B_lin_sym, [q; q_dot], [q0; q_dot0]))
+A_lin = simplify(subs(A_lin_sym, [q; q_dot], [q0; q_dot0]));
+B_lin = simplify(subs(B_lin_sym, [q; q_dot], [q0; q_dot0]));
 
-A_lin = double(A_lin);
-B_lin = double(B_lin);
+A_lin = double(subs(A_lin, 'upperLeg_theta', 0));
+B_lin = double(subs(B_lin, 'upperLeg_theta', 0));
+
+toc
+tic
 
 %% Design LQR controller
 Q = diag(10*ones(size([q; q_dot])));
@@ -203,7 +214,9 @@ K = lqr(A_lin, B_lin, Q, R); % N = 0
 disp('LQR Gain Matrix K:');
 disp(K);
 
+toc
 %% Simulate closed-loop system
+
 % u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
 % 
 % D_handle  = matlabFunction(D,  'vars', {q});
@@ -215,15 +228,59 @@ disp(K);
 % u_history = max(-u_max, min(u_max, -K*(x' - wr)));
 % plot(t, [x]);
 % legend('\theta_{wheel}', '\theta_{rod}', '\omega_{wheel}', '\omega_{rod}', '\tau_{wheel}', '\tau_{rod}');
+% 
+% function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
+%     q_i  = x(1:numel(x)/2);
+%     q_dot_i = x(numel(x)/2+1:end);
+% 
+%     D_val  = D_func(q_i); 
+%     Cg_val = Cg_func([q_i; q_dot_i]);
+% 
+%     q_ddot = D_val \ (u - Cg_val);
+% 
+%     x_dot = [q_dot_i;  q_ddot];
+% end
 
-function [x_dot, u] = my_non_linear_model(t, x, u, D_func, Cg_func)
-    q_i  = x(1:numel(x)/2);
-    q_dot_i = x(numel(x)/2+1:end);
+%% Height Control
 
-    D_val  = D_func(q_i); 
-    Cg_val = Cg_func([q_i; q_dot_i]);
+syms theta(t) T(t) theta_s T_s
 
-    q_ddot = D_val \ (u - Cg_val);
+upperLeg.theta_dot = diff(theta,t,1);
+upperLeg.theta_ddot = diff(theta,t,2);
 
-    x_dot = [q_dot_i;  q_ddot];
-end
+% 1. Physical ODE
+ode = upperLeg.mass * (upperLeg.length / 2) ^ 2 * upperLeg.theta_ddot + ...
+      upperLeg.mass * (upperLeg.length / 2) * cos(theta) * g + ...
+      payload.mass * upperLeg.length * cos(theta) * g == T(t);
+
+% 2. Linearize @ theta = pi/2
+ode = subs(ode, sin(theta), 1);
+ode = subs(ode, cos(theta), theta);
+
+% 3. Laplace and clear initial conditions
+ode_s = simplify(laplace(ode));
+L_ode = subs(ode_s, {laplace(theta(t)), laplace(T(t)), theta(0), subs(diff(theta,t),t,0)}, {theta_s, T_s, 0, 0});
+
+% 4. Solve for Xs/Fs
+G = simplify(solve(L_ode, theta_s) / T_s);
+
+% Convert to a standard Transfer Function object
+[num, den] = numden(G);
+plant = tf(sym2poly(num), sym2poly(den));
+
+% Create a tuning option for a fast response
+opts = pidtuneOptions( ...
+    'PhaseMargin', 65, ...         % Lower margin = faster, but more overshoot
+    'DesignFocus', 'disturbance-rejection'); % Focus on staying still when pushed
+
+[C_pid, info] = pidtune(plant, 'pid', opts);
+% [C_pid, info] = pidtune(plant, 'pid');
+% C_pid = pidTuner(plant, 'pid');
+
+%% See how it performs
+
+% sys_cl = feedback(C_pid * plant, 1);
+% figure;
+% step(sys_cl)
+% title('PID Control Response')
+% grid on
