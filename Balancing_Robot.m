@@ -13,7 +13,7 @@ x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
 wr = [pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-tau_max = 20; % Max Newton or Nm your motor can provide
+tau_max = 10; % Max Newton or Nm your motor can provide
 
 required_height = 0.8;
 
@@ -273,8 +273,8 @@ opts = pidtuneOptions( ...
     'PhaseMargin', 65, ...         % Lower margin = faster, but more overshoot
     'DesignFocus', 'disturbance-rejection'); % Focus on staying still when pushed
 
-[C_pid, info] = pidtune(plant, 'pid', opts);
-% [C_pid, info] = pidtune(plant, 'pid');
+% [C_pid, info] = pidtune(plant, 'pid', opts);
+[C_pid, info] = pidtune(plant, 'pid');
 % C_pid = pidTuner(plant, 'pid');
 
 %% See how it performs
