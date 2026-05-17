@@ -10,10 +10,10 @@ q_dot0 = [0; 0];
 % Model conditions
 tspan = 0:.001:30;
 x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
-wr = [pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
+wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
-tau_max = 10; % Max Newton or Nm your motor can provide
+tau_max = 20; % Max Newton or Nm your motor can provide
 
 required_height = 0.8;
 
@@ -203,11 +203,11 @@ toc
 tic
 
 %% Design LQR controller
-Q = diag(10*ones(size([q; q_dot])));
-R = diag(0.1*ones(size(symvar(u))));
+% Q = diag(10*ones(size([q; q_dot])));
+% R = diag(0.1*ones(size(symvar(u))));
 
-% Q = diag([1 100 100 100]);
-% R = diag([1]);
+Q = diag([1 100 100 100]);
+R = diag([1]);
 
 K = lqr(A_lin, B_lin, Q, R); % N = 0
 
