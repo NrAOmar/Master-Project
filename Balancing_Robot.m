@@ -10,7 +10,7 @@ q_dot0 = [0; 0];
 % Model conditions
 tspan = 0:.001:30;
 x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
-wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
+wr = [0; 0; 0; 0] + double([q0; q_dot0]); % desired position
 
 % Motors restrictions
 tau_max = 20; % Max Newton or Nm your motor can provide
@@ -98,10 +98,9 @@ upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta) + upperLeg
 upperLeg.x_dot = jacobian(upperLeg.x, q) * q_dot;
 upperLeg.y = lowerLeg.y + lowerLeg.length / 2 * sin(pi/2 + COM.theta) + upperLeg.length / 2 * sin(upperLeg.theta + COM.theta);
 upperLeg.y_dot = jacobian(upperLeg.y, q) * q_dot;
+upperLeg.theta0 = 0;
 
 % Payload
-% payload.l = lowerLeg.length * sin(pi/2) + upperLeg.length * sin(upperLeg.theta);
-% payload.l_dot = jacobian(payload.l, q) * q_dot;
 payload.x = upperLeg.x + upperLeg.length / 2 * cos(upperLeg.theta + COM.theta);
 payload.x_dot = jacobian(payload.x, q) * q_dot;
 payload.y = upperLeg.y + upperLeg.length / 2 * sin(upperLeg.theta + COM.theta);
@@ -112,6 +111,23 @@ COM.x = (2 * lowerLeg.x * lowerLeg.mass + 2 * upperLeg.x * upperLeg.mass + paylo
 COM.x_dot = jacobian(COM.x, q) * q_dot;
 COM.y = (2 * lowerLeg.y * lowerLeg.mass + 2 * upperLeg.y * upperLeg.mass + payload.y * payload.mass) / COM.mass;
 COM.y_dot = jacobian(COM.y, q) * q_dot;
+COM.l = simplify(sqrt((COM.x - wheel.x) ^ 2 + (COM.y - wheel.y) ^ 2));
+COM.theta0 = atan2(-(COM.x - wheel.x), (COM.y - wheel.y));
+
+matlabFunctionBlock( ...
+    "Balancing_Robot_model/Balancing Robot/Free Joint/calculate_COM_x", ...
+    COM.x, ...
+    'Vars',[wheel.theta, upperLeg.theta, COM.theta]);
+
+matlabFunctionBlock( ...
+    "Balancing_Robot_model/Balancing Robot/Free Joint/calculate_COM_y", ...
+    COM.y, ...
+    'Vars',[wheel.theta, upperLeg.theta, COM.theta]);
+
+matlabFunctionBlock( ...
+    "Balancing_Robot_model/Sensor/calculate_COM_theta", ...
+    subs(COM.theta0, 'COM_theta', q0(2)), ...
+    'Vars',[upperLeg.theta]);
 
 % Inputs
 u = [wheel.tau; 0];
@@ -156,17 +172,16 @@ acc_nl = simplify(D \ (-Cg + u));   % n x 1 symbolic q_ddot expressions
 toc
 tic
 
+% for i = 0:pi/180:pi/2
+% 
+% upperLeg.theta0 = i;
+% q0(2) = 0;
+
 %% Linearization
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
 % Balance at center of mass angle instead of payload angle
 
-COM.theta0 = atan2(-(COM.x-wheel.x), (COM.y-wheel.y));
-matlabFunctionBlock( ...
-    "Balancing_Robot_model/Sensor/calculate_COM_theta", ...
-    COM.theta0, ...
-    'Vars',[COM.theta, upperLeg.theta]);
-
-q0(2) = q0(2) - double(subs(COM.theta0, {'COM_theta', 'upperLeg_theta'}, {q0(2), 0}));
+q0(2) = q0(2) - double(subs(COM.theta0, {'COM_theta', 'upperLeg_theta'}, {q0(2), upperLeg.theta0}));
 x0 = x0 + double([q0; q_dot0]);
 
 % Evaluate D at equilibrium
@@ -203,18 +218,28 @@ toc
 tic
 
 %% Design LQR controller
-% Q = diag(10*ones(size([q; q_dot])));
-% R = diag(0.1*ones(size(symvar(u))));
+Q_fixed_height = diag(((1 ./ [5 0.01 20 0.1]) .^ 2));
+R_fixed_height = diag(((1 / nonzeros(u_max)) .^ 2));
 
-Q = diag([1 100 100 100]);
-R = diag([1]);
+% Q_fixed_height = diag(((1 ./ [0.2 0.01 2 0.1]) .^ 2));
+% R_fixed_height = diag(((1 / nonzeros(u_max)) .^ 2));
 
-K = lqr(A_lin, B_lin, Q, R); % N = 0
+Q_variable_height = diag([0.1 1 1 1]);
+R_variable_height = diag([0.01]);
 
-disp('LQR Gain Matrix K:');
-disp(K);
+K_fixed_height = lqr(A_lin, B_lin, Q_fixed_height, R_fixed_height); % N = 0
+K_variable_height = lqr(A_lin, B_lin, Q_variable_height, R_variable_height); % N = 0
 
+disp('For Upper Leg theta:');
+disp(upperLeg.theta0 * 180 / pi)
+disp('LQR Gain Matrix K for fixed height:');
+disp(K_fixed_height);
+disp('LQR Gain Matrix K for variable height:');
+disp(K_variable_height);
+
+% end
 toc
+
 %% Simulate closed-loop system
 
 % u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
