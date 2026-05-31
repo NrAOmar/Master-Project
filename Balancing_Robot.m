@@ -243,19 +243,46 @@ toc
 
 %% Height Control
 
-syms theta(t) T(t) theta_s T_s
+syms theta(t) T(t) theta_s T_s s
 
 upperLeg.theta_dot = diff(theta,t,1);
 upperLeg.theta_ddot = diff(theta,t,2);
 
-% 1. Physical ODE
-ode = upperLeg.mass * (upperLeg.length / 2) ^ 2 * upperLeg.theta_ddot + ...
-      upperLeg.mass * (upperLeg.length / 2) * cos(theta) * g + ...
-      payload.mass * upperLeg.length * cos(theta) * g == T(t);
+upperLeg.theta_offset = pi/2;
+theta_lower = -subs(COM.theta0, {'COM_theta', 'upperLeg_theta'}, {0, theta});
 
-% 2. Linearize @ theta = pi/2
-ode = subs(ode, sin(theta), 1);
-ode = subs(ode, cos(theta), theta);
+% 2. Linearize @ theta = 0
+% ode = subs(ode, sin(theta), theta);
+% ode = subs(ode, cos(theta), 1);
+
+theta0_val = 0;
+f = cos(theta + theta_lower);
+
+% compute zeroth and first derivatives
+f0 = simplify(subs(f, theta, theta0_val));
+df = simplify(diff(f, theta));
+df0 = simplify(subs(df, theta, theta0_val));
+
+% linearized expression: f ≈ f0 + df0*(theta - theta0)
+cos_lin = simplify(f0 + df0*theta);
+
+% 1. Physical ODE
+% upperLeg.Torque = ...
+%       payload.mass * upperLeg.length * cos(theta + theta_lower) * g / 2 + ... % for 2 joints
+%       upperLeg.mass * (upperLeg.length / 2) * cos(theta + theta_lower) * g + ...
+%       upperLeg.mass * (upperLeg.length / 2) ^ 2 * upperLeg.theta_ddot + ...
+%       upperLeg.speed_coef * upperLeg.theta_dot;
+
+upperLeg.Torque = ...
+      payload.mass * upperLeg.length * cos_lin * g / 2 + ... % for 2 joints
+      upperLeg.mass * (upperLeg.length / 2) * cos_lin * g + ...
+      upperLeg.mass * (upperLeg.length / 2) ^ 2 * upperLeg.theta_ddot + ...
+      upperLeg.speed_coef * upperLeg.theta_dot;
+
+upperLeg.K = abs(double(subs(upperLeg.Torque, {theta, upperLeg.theta_dot, upperLeg.theta_ddot}, {0, 0, 0}) / upperLeg.theta_offset));
+upperLeg.Torque = upperLeg.Torque - upperLeg.K * (upperLeg.theta_offset - theta);
+
+ode = upperLeg.Torque == T(t);
 
 % 3. Laplace and clear initial conditions
 ode_s = simplify(laplace(ode));
@@ -264,9 +291,20 @@ L_ode = subs(ode_s, {laplace(theta(t)), laplace(T(t)), theta(0), subs(diff(theta
 % 4. Solve for Xs/Fs
 G = simplify(solve(L_ode, theta_s) / T_s);
 
-% Convert to a standard Transfer Function object
-[num, den] = numden(G);
-plant = tf(sym2poly(num), sym2poly(den));
+% get coefficient vectors in descending powers of s
+[num_sym, den_sym] = numden(G);
+num_coeffs = fliplr(coeffs(num_sym, s, 'All'));   % descending order
+den_coeffs = fliplr(coeffs(den_sym, s, 'All'));
+
+% create MATLAB functions that return numeric coefficient vectors for a given T_s
+num_fun = matlabFunction(num_coeffs, 'Vars', T_s);
+den_fun = matlabFunction(den_coeffs, 'Vars', T_s);
+
+% when you pick a value for T_s (e.g. Tval)
+Tval = 0.01;                      % choose a candidate T_s
+num = double(num_fun(Tval));
+den = double(den_fun(Tval));
+plant = tf(num, den);             % numeric transfer function you can feed to pidtune
 
 % Create a tuning option for a fast response
 opts = pidtuneOptions( ...
