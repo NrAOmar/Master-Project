@@ -31,7 +31,6 @@ wheel.radius = 0.2 / 2;
 wheel.thickness = 0.1 * wheel.radius;
 wheel.mass = 0.5;
 wheel.I = 1/2 * wheel.mass * (wheel.radius ^ 2 + (wheel.radius - wheel.thickness)^ 2);
-wheel.cof = 0; % coefficient of friction
 
 % Rod
 rod = struct;
@@ -39,7 +38,6 @@ rod.length = (required_height - wheel.radius) / 2;
 rod.width = 0.02;
 rod.thickness = 0.005;
 rod.mass = 3;
-rod.cof = 0; % coefficient of friction
 
 % Payload
 payload = struct;
@@ -84,6 +82,7 @@ wheel.y_dot = jacobian(wheel.y, q) * q_dot;
 
 % Lower Leg
 lowerLeg = rod;
+lowerLeg.speed_coef = 0; % coefficient of friction
 lowerLeg.length = (required_height - wheel.radius) * 0.3;
 lowerLeg.x = wheel.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta);
 lowerLeg.x_dot = jacobian(lowerLeg.x, q) * q_dot;
@@ -92,6 +91,7 @@ lowerLeg.y_dot = jacobian(lowerLeg.y, q) * q_dot;
 
 % Upper Leg
 upperLeg = rod;
+upperLeg.speed_coef = 0; % coefficient of friction
 upperLeg.length = (required_height - wheel.radius) * 0.7;
 upperLeg.theta = sym('upperLeg_theta', 'real');
 upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta) + upperLeg.length / 2 * cos(upperLeg.theta + COM.theta);
@@ -131,8 +131,8 @@ PE = (COM.mass * COM.y + 2 * wheel.mass * wheel.y) * g;
 
 L = KE - PE;
 
-R =     1/2 * wheel.cof * wheel.theta_dot ^ 2;
-R = R + 1/2 * rod.cof * COM.theta_dot ^ 2;
+R =     1/2 * lowerLeg.speed_coef * wheel.theta_dot ^ 2;
+R = R + 1/2 * upperLeg.speed_coef * COM.theta_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
 EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)';
