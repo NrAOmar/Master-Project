@@ -39,6 +39,9 @@ rod.width = 0.02;
 rod.thickness = 0.005;
 rod.mass = 3;
 
+lowerLeg = rod;
+upperLeg = rod;
+
 % Payload
 payload = struct;
 payload.mass = 10;
@@ -62,15 +65,15 @@ wheel.theta_ddot = sym('wheel_theta_ddot', 'real');
 
 wheel.tau = sym('wheel_tau', 'real');
 
-% Center of Mass
-COM.theta = sym('COM_theta', 'real');
-COM.theta_dot = sym('COM_theta_dot', 'real');
-COM.theta_ddot = sym('COM_theta_ddot', 'real');
+% Lower Leg
+lowerLeg.theta = sym('lowerLeg_theta', 'real');
+lowerLeg.theta_dot = sym('lowerLeg_theta_dot', 'real');
+lowerLeg.theta_ddot = sym('lowerLeg_theta_ddot', 'real');
 
 % States
-q = [wheel.theta; COM.theta];
-q_dot = [wheel.theta_dot; COM.theta_dot];
-q_ddot = [wheel.theta_ddot; COM.theta_ddot];
+q = [wheel.theta; lowerLeg.theta];
+q_dot = [wheel.theta_dot; lowerLeg.theta_dot];
+q_ddot = [wheel.theta_ddot; lowerLeg.theta_ddot];
 
 %% Derive other parameters
 
@@ -81,30 +84,27 @@ wheel.y = wheel.radius;
 wheel.y_dot = jacobian(wheel.y, q) * q_dot;
 
 % Lower Leg
-lowerLeg = rod;
 lowerLeg.speed_coef = 0; % coefficient of friction
 lowerLeg.length = (required_height - wheel.radius) * 0.3;
-lowerLeg.x = wheel.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta);
+lowerLeg.x = wheel.x + lowerLeg.length / 2 * cos(pi/2 + lowerLeg.theta);
 lowerLeg.x_dot = jacobian(lowerLeg.x, q) * q_dot;
-lowerLeg.y = wheel.y + lowerLeg.length / 2 * sin(pi/2 + COM.theta);
+lowerLeg.y = wheel.y + lowerLeg.length / 2 * sin(pi/2 + lowerLeg.theta);
 lowerLeg.y_dot = jacobian(lowerLeg.y, q) * q_dot;
 
 % Upper Leg
-upperLeg = rod;
 upperLeg.speed_coef = 0; % coefficient of friction
 upperLeg.length = (required_height - wheel.radius) * 0.7;
 upperLeg.theta = sym('upperLeg_theta', 'real');
-upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + COM.theta) + upperLeg.length / 2 * cos(upperLeg.theta + COM.theta);
+upperLeg.x = lowerLeg.x + lowerLeg.length / 2 * cos(pi/2 + lowerLeg.theta) + upperLeg.length / 2 * cos(upperLeg.theta + lowerLeg.theta);
 upperLeg.x_dot = jacobian(upperLeg.x, q) * q_dot;
-upperLeg.y = lowerLeg.y + lowerLeg.length / 2 * sin(pi/2 + COM.theta) + upperLeg.length / 2 * sin(upperLeg.theta + COM.theta);
+upperLeg.y = lowerLeg.y + lowerLeg.length / 2 * sin(pi/2 + lowerLeg.theta) + upperLeg.length / 2 * sin(upperLeg.theta + lowerLeg.theta);
 upperLeg.y_dot = jacobian(upperLeg.y, q) * q_dot;
+upperLeg.theta0 = 0;
 
 % Payload
-% payload.l = lowerLeg.length * sin(pi/2) + upperLeg.length * sin(upperLeg.theta);
-% payload.l_dot = jacobian(payload.l, q) * q_dot;
-payload.x = upperLeg.x + upperLeg.length / 2 * cos(upperLeg.theta + COM.theta);
+payload.x = upperLeg.x + upperLeg.length / 2 * cos(upperLeg.theta + lowerLeg.theta);
 payload.x_dot = jacobian(payload.x, q) * q_dot;
-payload.y = upperLeg.y + upperLeg.length / 2 * sin(upperLeg.theta + COM.theta);
+payload.y = upperLeg.y + upperLeg.length / 2 * sin(upperLeg.theta + lowerLeg.theta);
 payload.y_dot = jacobian(payload.y, q) * q_dot;
 
 % Center of mass
@@ -112,6 +112,13 @@ COM.x = (2 * lowerLeg.x * lowerLeg.mass + 2 * upperLeg.x * upperLeg.mass + paylo
 COM.x_dot = jacobian(COM.x, q) * q_dot;
 COM.y = (2 * lowerLeg.y * lowerLeg.mass + 2 * upperLeg.y * upperLeg.mass + payload.y * payload.mass) / COM.mass;
 COM.y_dot = jacobian(COM.y, q) * q_dot;
+COM.l = simplify(sqrt((COM.x - wheel.x) ^ 2 + (COM.y - wheel.y) ^ 2));
+COM.theta = atan2((COM.y - wheel.y), (COM.x - wheel.x)) - pi/2;
+
+matlabFunctionBlock( ...
+    "Balancing_Robot_model/Sensor/calculate_COM_theta", ...
+    subs(COM.theta, 'lowerLeg_theta', q0(2)), ...
+    'Vars',[upperLeg.theta]);
 
 % Inputs
 u = [wheel.tau; 0];
@@ -132,7 +139,7 @@ PE = (COM.mass * COM.y + 2 * wheel.mass * wheel.y) * g;
 L = KE - PE;
 
 R =     1/2 * lowerLeg.speed_coef * wheel.theta_dot ^ 2;
-R = R + 1/2 * upperLeg.speed_coef * COM.theta_dot ^ 2;
+R = R + 1/2 * upperLeg.speed_coef * lowerLeg.theta_dot ^ 2;
 
 % Compute the equations of motion using Lagrange's equations
 EOM = jacobian(jacobian(L, q_dot), [q; q_dot]) * [q_dot; q_ddot] - jacobian(L, q)' + jacobian(R, q_dot)';
@@ -160,13 +167,7 @@ tic
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
 % Balance at center of mass angle instead of payload angle
 
-COM.theta0 = atan2(-(COM.x-wheel.x), (COM.y-wheel.y));
-matlabFunctionBlock( ...
-    "Balancing_Robot_model/Sensor/calculate_COM_theta", ...
-    COM.theta0, ...
-    'Vars',[COM.theta, upperLeg.theta]);
-
-q0(2) = q0(2) - double(subs(COM.theta0, {'COM_theta', 'upperLeg_theta'}, {q0(2), 0}));
+q0(2) = q0(2) - double(subs(COM.theta, {'lowerLeg_theta', 'upperLeg_theta'}, {q0(2), upperLeg.theta0}));
 x0 = x0 + double([q0; q_dot0]);
 
 % Evaluate D at equilibrium
@@ -215,6 +216,7 @@ disp('LQR Gain Matrix K:');
 disp(K);
 
 toc
+
 %% Simulate closed-loop system
 
 % u_law = @(x) max(-u_max, min(u_max, -K*(x - wr))); % control law
@@ -249,7 +251,7 @@ upperLeg.theta_dot = diff(theta,t,1);
 upperLeg.theta_ddot = diff(theta,t,2);
 
 upperLeg.theta_offset = pi/2;
-theta_lower = -subs(COM.theta0, {'COM_theta', 'upperLeg_theta'}, {0, theta});
+theta_lower = -subs(COM.theta, {'lowerLeg_theta', 'upperLeg_theta'}, {0, theta});
 
 % 2. Linearize @ theta = 0
 % ode = subs(ode, sin(theta), theta);
