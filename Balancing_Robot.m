@@ -1,4 +1,4 @@
-clear all, clc
+% clear all, clc
 
 %% Initial Conditions
 
@@ -173,6 +173,12 @@ acc_nl = simplify(D \ (-Cg + u));   % n x 1 symbolic q_ddot expressions
 toc
 tic
 
+K = zeros(1, 4, round((pi/180 / pi/2)) + 1);
+for i = 0:90
+
+upperLeg.theta0 = i * pi / 180;
+q0(2) = 0;
+
 %% Linearization
 % Linearization about equilibrium (q0, q_dot0). Use symbolic q0,q_dot0 or numeric later.
 % Balance at center of mass angle instead of payload angle
@@ -217,13 +223,14 @@ tic
 Q = diag(((1 ./ [wr(1)*0.05 0.01 wr(1)*0.2 0.2]) .^ 2));
 R = diag(((1 ./ nonzeros(u_max)) .^ 2));
 
-K = lqr(A_lin, B_lin, Q, R); % N = 0
+K(:,:,i+1) = lqr(A_lin, B_lin, Q, R); % N = 0
 
 disp('For Upper Leg theta:');
 disp(upperLeg.theta0 * 180 / pi)
 disp('LQR Gain Matrix K:');
 disp(K);
 
+end
 toc
 
 %% Simulate closed-loop system
