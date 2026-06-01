@@ -9,8 +9,8 @@ q_dot0 = [0; 0];
 
 % Model conditions
 tspan = 0:.001:30;
-x0 = [0; 0; 0; 0] + double([q0; q_dot0]);
-wr = [6*pi; 0; 0; 0] + double([q0; q_dot0]); % desired position
+wr = [2/0.1; 0; 0; 0] + double([q0; q_dot0]); % desired position
+x0 = [-wr(1); 0; 0; 0] + double([q0; q_dot0]);
 
 % Motors restrictions
 tau_max = 20; % Max Newton or Nm your motor can provide
@@ -21,7 +21,7 @@ required_height = 0.8;
 
 % Floor
 floor = struct;
-floor.length = 5;
+floor.length = 10;
 floor.width = 0.4;
 floor.height = 0.01;
 
@@ -116,12 +116,12 @@ COM.l = simplify(sqrt((COM.x - wheel.x) ^ 2 + (COM.y - wheel.y) ^ 2));
 COM.theta = atan2((COM.y - wheel.y), (COM.x - wheel.x)) - pi/2;
 
 matlabFunctionBlock( ...
-    "Balancing_Robot_model/Balancing Robot/Free Joint/calculate_COM_x", ...
+    "Balancing_Robot_model/Balancing Robot/Display COM/calculate_COM_x", ...
     COM.x, ...
     'Vars',[wheel.theta, upperLeg.theta, lowerLeg.theta]);
 
 matlabFunctionBlock( ...
-    "Balancing_Robot_model/Balancing Robot/Free Joint/calculate_COM_y", ...
+    "Balancing_Robot_model/Balancing Robot/Display COM/calculate_COM_y", ...
     COM.y, ...
     'Vars',[wheel.theta, upperLeg.theta, lowerLeg.theta]);
 
@@ -214,14 +214,13 @@ toc
 tic
 
 %% Design LQR controller
-% Q = diag(10*ones(size([q; q_dot])));
-% R = diag(0.1*ones(size(symvar(u))));
-
-Q = diag([1 100 100 100]);
-R = diag([1]);
+Q = diag(((1 ./ [wr(1)*0.05 0.01 wr(1)*0.2 0.2]) .^ 2));
+R = diag(((1 ./ nonzeros(u_max)) .^ 2));
 
 K = lqr(A_lin, B_lin, Q, R); % N = 0
 
+disp('For Upper Leg theta:');
+disp(upperLeg.theta0 * 180 / pi)
 disp('LQR Gain Matrix K:');
 disp(K);
 
